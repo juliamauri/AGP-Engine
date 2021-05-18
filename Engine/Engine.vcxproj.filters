@@ -94,7 +94,13 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="WorkingDir\shaders.glsl">
+    <None Include="WorkingDir\GeoPassShader.glsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="WorkingDir\LightPassShader.glsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="WorkingDir\QuadRender.glsl">
       <Filter>Shaders</Filter>
     </None>
   </ItemGroup>

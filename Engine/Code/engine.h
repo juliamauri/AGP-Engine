@@ -14,6 +14,13 @@ typedef glm::ivec2 ivec2;
 typedef glm::ivec3 ivec3;
 typedef glm::ivec4 ivec4;
 
+struct FBO
+{
+    std::vector<u32> texturesID;
+    u32 ID = 0, width = 0, height = 0,
+        depthBuffer = 0, depthBufferTexture = 0;
+};
+
 struct Image
 {
     void* pixels;
@@ -125,6 +132,17 @@ struct LightSceneObject {
     Light light;
 };
 
+struct Camera
+{
+    vec3 cameraPos;
+    vec3 cameraTarget;
+    vec3 cameraDirection;
+
+    vec3 cameraRight;
+    vec3 cameraFront;
+    vec3 cameraUp;
+};
+
 struct App
 {
     // Loop
@@ -149,6 +167,8 @@ struct App
     std::vector<ModelSceneObject>  modelSceneObjects;
     std::vector<LightSceneObject>  lightSceneObjects;
 
+    Camera cam;
+
     // program indices
     u32 texturedGeometryProgramIdx;
     
@@ -170,9 +190,17 @@ struct App
     // Location of the texture uniform in the textured quad shader
     GLuint programGeoPass;
     GLuint programLightPass;
+    GLuint programquadReder;
+
+    FBO deferredFBO;
+
+    //Sphere Buffer
+    GLuint Svao, Svbo, Sebo, Stri;
 
     // VAO object to link our screen filling quad with our textured quad shader
     GLuint vao, vbo, ebo;
+
+    i32 textureOutputType = 3;
 };
 
 void Init(App* app);

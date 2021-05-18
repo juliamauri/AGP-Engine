@@ -47,7 +47,9 @@
     <ClInclude Include="ThirdParty\stb\stb_image.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="WorkingDir\shaders.glsl" />
+    <None Include="WorkingDir\GeoPassShader.glsl" />
+    <None Include="WorkingDir\LightPassShader.glsl" />
+    <None Include="WorkingDir\QuadRender.glsl" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>

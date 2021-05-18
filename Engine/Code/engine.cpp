@@ -16,6 +16,81 @@
 #include <assimp/postprocess.h>
 
 
+Image LoadImage(const char* filename)
+{
+    Image img = {};
+    stbi_set_flip_vertically_on_load(true);
+    img.pixels = stbi_load(filename, &img.size.x, &img.size.y, &img.nchannels, 0);
+    if (img.pixels)
+    {
+        img.stride = img.size.x * img.nchannels;
+    }
+    else
+    {
+        ELOG("Could not open file %s", filename);
+    }
+    return img;
+}
+
+void FreeImage(Image image)
+{
+    stbi_image_free(image.pixels);
+}
+
+GLuint CreateTexture2DFromImage(Image image)
+{
+    GLenum internalFormat = GL_RGB8;
+    GLenum dataFormat = GL_RGB;
+    GLenum dataType = GL_UNSIGNED_BYTE;
+
+    switch (image.nchannels)
+    {
+    case 3: dataFormat = GL_RGB; internalFormat = GL_RGB8; break;
+    case 4: dataFormat = GL_RGBA; internalFormat = GL_RGBA8; break;
+    default: ELOG("LoadTexture2D() - Unsupported number of channels");
+    }
+
+    GLuint texHandle;
+    glGenTextures(1, &texHandle);
+    glBindTexture(GL_TEXTURE_2D, texHandle);
+    glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, image.size.x, image.size.y, 0, dataFormat, dataType, image.pixels);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    return texHandle;
+}
+
+u32 LoadTexture2D(App* app, const char* filepath)
+{
+    for (u32 texIdx = 0; texIdx < app->textures.size(); ++texIdx)
+        if (app->textures[texIdx].filepath == filepath)
+            return texIdx;
+
+    Image image = LoadImage(filepath);
+
+    if (image.pixels)
+    {
+        Texture tex = {};
+        tex.handle = CreateTexture2DFromImage(image);
+        tex.filepath = filepath;
+
+        u32 texIdx = app->textures.size();
+        app->textures.push_back(tex);
+
+        FreeImage(image);
+        return texIdx;
+    }
+    else
+    {
+        return UINT32_MAX;
+    }
+}
+
 void ProcessAssimpMesh(const aiScene* scene, aiMesh* mesh, Mesh* myMesh, u32 baseMeshMaterialIndex, std::vector<u32>& submeshMaterialIndices)
 {
     std::vector<float> vertices;
@@ -365,81 +440,6 @@ u32 LoadProgram(App* app, const char* filepath, const char* programName)
     return app->programs.size() - 1;
 }
 
-Image LoadImage(const char* filename)
-{
-    Image img = {};
-    stbi_set_flip_vertically_on_load(true);
-    img.pixels = stbi_load(filename, &img.size.x, &img.size.y, &img.nchannels, 0);
-    if (img.pixels)
-    {
-        img.stride = img.size.x * img.nchannels;
-    }
-    else
-    {
-        ELOG("Could not open file %s", filename);
-    }
-    return img;
-}
-
-void FreeImage(Image image)
-{
-    stbi_image_free(image.pixels);
-}
-
-GLuint CreateTexture2DFromImage(Image image)
-{
-    GLenum internalFormat = GL_RGB8;
-    GLenum dataFormat     = GL_RGB;
-    GLenum dataType       = GL_UNSIGNED_BYTE;
-
-    switch (image.nchannels)
-    {
-        case 3: dataFormat = GL_RGB; internalFormat = GL_RGB8; break;
-        case 4: dataFormat = GL_RGBA; internalFormat = GL_RGBA8; break;
-        default: ELOG("LoadTexture2D() - Unsupported number of channels");
-    }
-
-    GLuint texHandle;
-    glGenTextures(1, &texHandle);
-    glBindTexture(GL_TEXTURE_2D, texHandle);
-    glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, image.size.x, image.size.y, 0, dataFormat, dataType, image.pixels);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glGenerateMipmap(GL_TEXTURE_2D);
-    glBindTexture(GL_TEXTURE_2D, 0);
-
-    return texHandle;
-}
-
-u32 LoadTexture2D(App* app, const char* filepath)
-{
-    for (u32 texIdx = 0; texIdx < app->textures.size(); ++texIdx)
-        if (app->textures[texIdx].filepath == filepath)
-            return texIdx;
-
-    Image image = LoadImage(filepath);
-
-    if (image.pixels)
-    {
-        Texture tex = {};
-        tex.handle = CreateTexture2DFromImage(image);
-        tex.filepath = filepath;
-
-        u32 texIdx = app->textures.size();
-        app->textures.push_back(tex);
-
-        FreeImage(image);
-        return texIdx;
-    }
-    else
-    {
-        return UINT32_MAX;
-    }
-}
-
 void Init(App* app)
 {
     // TODO: Initialize your resources here!
@@ -449,6 +449,131 @@ void Init(App* app)
     // - programs (and retrieve uniform indices)
     // - textures
 
+    //Deferred FBO Setup
+    u32 width = app->deferredFBO.width = app->displaySize.x;
+    u32 height =  app->deferredFBO.height = app->displaySize.y;
+    glGenFramebuffers(1, &app->deferredFBO.ID);
+    glBindFramebuffer(GL_FRAMEBUFFER, app->deferredFBO.ID);
+
+    // position
+    unsigned int tex = 0;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, width, height, 0, GL_RGB, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+    app->deferredFBO.texturesID.push_back(tex);
+
+    // normal
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, width, height, 0, GL_RGB, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, tex, 0);
+    app->deferredFBO.texturesID.push_back(tex);
+
+    // Albedo
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, tex, 0);
+    app->deferredFBO.texturesID.push_back(tex);
+
+    // Specular + Shininess + Alpha
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, width, height, 0, GL_RGB, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT3, GL_TEXTURE_2D, tex, 0);
+    app->deferredFBO.texturesID.push_back(tex);
+
+    // Result
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, width, height, 0, GL_RGBA, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT4, GL_TEXTURE_2D, tex, 0);
+    app->deferredFBO.texturesID.push_back(tex);
+
+    // Bind Attachments
+    unsigned int attachments[5] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2, GL_COLOR_ATTACHMENT3, GL_COLOR_ATTACHMENT4 };
+    glDrawBuffers(5, attachments);
+
+
+    glGenTextures(1, &app->deferredFBO.depthBufferTexture);
+    glBindTexture(GL_TEXTURE_2D, app->deferredFBO.depthBufferTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, width, height, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, app->deferredFBO.depthBufferTexture, 0);
+
+    glGenRenderbuffers(1, &app->deferredFBO.depthBuffer);
+    glBindRenderbuffer(GL_RENDERBUFFER, app->deferredFBO.depthBuffer);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, width, height);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, app->deferredFBO.depthBuffer);
+
+    glBindRenderbuffer(GL_RENDERBUFFER, 0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    //Light Sphere
+    u32 lats = 40, longs = 40;
+    int i, j;
+    std::vector<GLfloat> vertices;
+    std::vector<GLuint> indices;
+    int indicator = 0;
+    for (i = 0; i <= lats; i++) {
+        double lat0 = glm::pi<double>() * (-0.5 + (double)(i - 1) / lats);
+        double z0 = sin(lat0);
+        double zr0 = cos(lat0);
+
+        double lat1 = glm::pi<double>() * (-0.5 + (double)i / lats);
+        double z1 = sin(lat1);
+        double zr1 = cos(lat1);
+
+        for (j = 0; j <= longs; j++) {
+            double lng = 2 * glm::pi<double>() * (double)(j - 1) / longs;
+            double x = cos(lng);
+            double y = sin(lng);
+
+            vertices.push_back(x * zr0);
+            vertices.push_back(y * zr0);
+            vertices.push_back(z0);
+            indices.push_back(indicator);
+            indicator++;
+
+            vertices.push_back(x * zr1);
+            vertices.push_back(y * zr1);
+            vertices.push_back(z1);
+            indices.push_back(indicator);
+            indicator++;
+        }
+        indices.push_back(GL_PRIMITIVE_RESTART_FIXED_INDEX);
+    }
+
+    glGenVertexArrays(1, &app->Svao);
+    glBindVertexArray(app->Svao);
+
+    glGenBuffers(1, &app->Svbo);
+    glBindBuffer(GL_ARRAY_BUFFER, app->Svbo);
+    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(GLfloat), &vertices[0], GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, NULL);
+    glEnableVertexAttribArray(0);
+
+    glGenBuffers(1, &app->Sebo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, app->Sebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(GLuint), &indices[0], GL_STATIC_DRAW);
+
+    app->Stri = indices.size();
+
+    //Quad buffer
     float quadVertices[] = {
         // positions        // texture Coords
         -1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
@@ -467,17 +592,58 @@ void Init(App* app)
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
 
-
-    app->programGeoPass = LoadProgram(app, "shaders.glsl", "GEOMETRY_PASS");
-    app->programLightPass = LoadProgram(app, "shaders.glsl", "LIGHT_PASS");
-
     app->mode = Mode_TexturedQuad;
+
+
+    app->cam.cameraPos = glm::vec3(0.0f, 0.0f, 3.0f);
+    app->cam.cameraTarget = glm::vec3(0.0f, 0.0f, 0.0f);
+    app->cam.cameraDirection = glm::normalize(app->cam.cameraPos - app->cam.cameraTarget);
+
+
+    vec3 up = vec3(0.0f, 1.0f, 0.0f);
+    app->cam.cameraRight = glm::normalize(glm::cross(up, app->cam.cameraDirection));
+    app->cam.cameraFront = vec3(0.0f, 0.0f, -1.0f);
+    app->cam.cameraUp = vec3(0.0f, 1.0f, 0.0f);
+
+    u32 mLoaded = LoadModel(app, "Patrick\\Patrick.obj");
+
+    glm::mat4 trans = glm::mat4(1.0f);
+    trans = glm::translate(trans, vec3(0.0));
+
+    app->modelSceneObjects.push_back(ModelSceneObject());
+    ModelSceneObject& sobj = app->modelSceneObjects.back();
+
+    sobj.modelIdx = mLoaded;
+    sobj.transform = trans;
+
+    app->lightSceneObjects.push_back(LightSceneObject());
+    LightSceneObject& lsObj = app->lightSceneObjects.back();
+    lsObj.position = vec3(0.0f, 5.0f, 0.0f);
+    lsObj.direction = vec3(0.0f, -1.0f, 0.0f);
+    lsObj.light.type = L_POINT;
+    lsObj.light.intensity = 1.0f;
+    lsObj.light.constant = 1.0f;
+    lsObj.light.linear = 1.0f;
+    lsObj.light.quadratic = 1.0f;
+    lsObj.light.diffuse = vec3(0.8f);
+    lsObj.light.specular = 0.2f;
+    lsObj.light.cutOff[0] = 12.5f;
+    lsObj.light.outerCutOff[0] = 17.5f;
+    lsObj.light.cutOff[1] = glm::cos(glm::radians(lsObj.light.cutOff[0]));
+    lsObj.light.outerCutOff[1] = glm::cos(glm::radians(lsObj.light.outerCutOff[0]));
+
+    app->programGeoPass = LoadProgram(app, "GeoPassShader.glsl", "GEOMETRY_PASS");
+    app->programLightPass = LoadProgram(app, "LightPassShader.glsl", "LIGHT_PASS");
+    app->programquadReder = LoadProgram(app, "QuadRender.glsl", "QUAD_RENDER");
+
 }
 
 void Gui(App* app)
 {
     ImGui::Begin("Info");
     ImGui::Text("FPS: %f", 1.0f/app->deltaTime);
+    ImGui::Combo("Select Texture", &app->textureOutputType, "Position\0Normal\0Albedo\0Final\0Depth\0");
+    ImGui::TextWrapped("Everything works correctly but the final render do not display anything");
     ImGui::End();
 }
 
@@ -502,9 +668,94 @@ void Render(App* app)
                 // - bind the vao
                 // - glDrawElements() !!!
 
+                glBindFramebuffer(GL_FRAMEBUFFER, app->deferredFBO.ID);
+                glViewport(0, 0, app->deferredFBO.width, app->deferredFBO.height);
+
                 //Geometry Pass
                 glUseProgram(app->programGeoPass);
 
+                glm::mat4 view;
+                view = glm::lookAt(app->cam.cameraPos, app->cam.cameraPos + app->cam.cameraFront, app->cam.cameraUp);
+                glUniformMatrix4fv(glGetUniformLocation(app->programGeoPass, "view"), 1, GL_FALSE, glm::value_ptr(view));
+
+                glm::mat4 projection;
+                projection = glm::perspective(glm::radians(90.0f), float(app->deferredFBO.width) / float(app->deferredFBO.height), 0.1f, 100.0f);
+                glUniformMatrix4fv(glGetUniformLocation(app->programGeoPass, "projection"), 1, GL_FALSE, glm::value_ptr(projection));
+
+                for (u32 i = 0; i < app->modelSceneObjects.size(); i++)
+                {
+                    glUniformMatrix4fv(glGetUniformLocation(app->programGeoPass, "model"), 1, GL_FALSE, glm::value_ptr(app->modelSceneObjects[i].transform));
+
+                    Model& mod = app->models[app->modelSceneObjects[i].modelIdx];
+                    Mesh& mesh = app->meshes[mod.meshIdx];
+                    
+
+                    if (mod.materialIdx.size() > 0)
+                    {
+                        Material& mat = app->materials[mod.materialIdx[0]];
+
+                        u32 texCount = 0;
+                        if (mat.albedoTextureIdx > 0) 
+                        {
+                            glUniform1f(glGetUniformLocation(app->programGeoPass, "useTexture"), 1.0f);
+
+                            glActiveTexture(GL_TEXTURE0 + texCount);
+                            glUniform1i(glGetUniformLocation(app->programLightPass, "tdiffuse"), texCount);
+                            glBindTexture(GL_TEXTURE_2D, mat.albedoTextureIdx);
+                            texCount++;
+
+
+                            if (mat.specularTextureIdx > 0)
+                            {
+                                glActiveTexture(GL_TEXTURE0 + texCount);
+                                glUniform1i(glGetUniformLocation(app->programLightPass, "tspecular"), texCount);
+                                glBindTexture(GL_TEXTURE_2D, mat.specularTextureIdx);
+                            }
+                        }
+                        else
+                            glUniform1f(glGetUniformLocation(app->programGeoPass, "useTexture"), 0.0f);
+
+                        if (mat.albedo.length() > 0.0f)
+                        {
+                            glUniform1f(glGetUniformLocation(app->programGeoPass, "useColor"), 1.0f);
+                            glUniform3f(glGetUniformLocation(app->programGeoPass, "albedo"), mat.albedo.x, mat.albedo.y, mat.albedo.z);
+                            
+                            if (mat.emissive.length() > 0.0f)
+                                glUniform3f(glGetUniformLocation(app->programGeoPass, "emissive"), mat.emissive.x, mat.emissive.y, mat.emissive.z);
+                            
+                            glUniform1f(glGetUniformLocation(app->programGeoPass, "smoothness"), mat.smoothness);
+                        }
+                        else
+                            glUniform1f(glGetUniformLocation(app->programGeoPass, "useColor"), 0.0f);
+
+                    }
+                    
+                    glBindVertexArray(mesh.vertexArrayHandle);
+                    glDrawElements(GL_TRIANGLES, mesh.indices.size(), GL_UNSIGNED_INT, nullptr);
+                }
+
+                for (u32 i = 0; i < app->lightSceneObjects.size(); i++)
+                {
+                    if (app->lightSceneObjects[i].light.type != LightType::L_DIRECTIONAL)
+                    {
+                        glm::mat4 trans = glm::mat4(1.0f);
+                        trans = glm::translate(trans, app->lightSceneObjects[i].position);
+                        glUniformMatrix4fv(glGetUniformLocation(app->programGeoPass, "model"), 1, GL_FALSE, glm::value_ptr(trans));
+
+                        glUniform1f(glGetUniformLocation(app->programGeoPass, "useColor"), 1.0f);
+                        glUniform1f(glGetUniformLocation(app->programGeoPass, "useTexture"), 0.0f);
+                        glUniform3f(glGetUniformLocation(app->programGeoPass, "albedo"), 1.0f, 0.0f, 0.0f);
+                        glUniform3f(glGetUniformLocation(app->programGeoPass, "emissive"), 1.0f, 0.0f, 0.0f);
+                        glUniform1f(glGetUniformLocation(app->programGeoPass, "smoothness"), 32.0f / 256.0f);
+
+                        // draw sphere
+                        glBindVertexArray(app->Svao);
+                        glEnable(GL_PRIMITIVE_RESTART);
+                        glPrimitiveRestartIndex(GL_PRIMITIVE_RESTART_FIXED_INDEX);
+                        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, app->Sebo);
+                        glDrawElements(GL_QUAD_STRIP, app->Stri, GL_UNSIGNED_INT, NULL);
+                    }
+                }
 
                 //LightPass
                 glUseProgram(app->programLightPass);
@@ -512,10 +763,19 @@ void Render(App* app)
                 glMemoryBarrier(GL_FRAMEBUFFER_BARRIER_BIT);
 
                 //UploadLights
+
+                // Bind Textures
+                static const std::string deferred_textures[4] = { "gPosition", "gNormal", "gAlbedo", "gSpec" };
+                for (unsigned int count = 0; count < 4; ++count)
+                {
+                    glActiveTexture(GL_TEXTURE0 + count);
+                    glUniform1i(glGetUniformLocation(app->programLightPass, deferred_textures[count].c_str()), count);
+                    glBindTexture(GL_TEXTURE_2D, app->deferredFBO.texturesID[count]);
+                }
+
                 u32 lCount = 0;
 
                 std::string unif_name;
-                //Upload lights counts
                 for (u32 i = 0; i < app->lightSceneObjects.size(); i++) {
                     unif_name = "lights[" + std::to_string(lCount) + "].";
 
@@ -539,11 +799,52 @@ void Render(App* app)
                     if (lCount == 203) break;
                 }
 
+                glUniform1i(glGetUniformLocation(app->programLightPass, "count"), lCount);
+                vec3 cameraPos = app->cam.cameraPos;
+                glUniform3f(glGetUniformLocation(app->programLightPass, "viewPos"), cameraPos.x, cameraPos.y, cameraPos.z);
+
                 // Render Quad
+                glBindVertexArray(app->vao);
+                glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+                glMemoryBarrier(GL_FRAMEBUFFER_BARRIER_BIT);
+
+                // Show Final Texture
+                glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                glViewport(0, 0, app->displaySize.x, app->displaySize.y);
+
+                glUseProgram(app->programquadReder);
+
+                glActiveTexture(GL_TEXTURE0);
+                glUniform1i(glGetUniformLocation(app->programLightPass, "uTexture"), 0);
+
+                switch (app->textureOutputType)
+                {
+                case 0:
+                    glBindTexture(GL_TEXTURE_2D, app->deferredFBO.texturesID[0]);
+                    break;
+                case 1:
+                    glBindTexture(GL_TEXTURE_2D, app->deferredFBO.texturesID[1]);
+                    break;
+                case 2:
+                    glBindTexture(GL_TEXTURE_2D, app->deferredFBO.texturesID[2]);
+                    break;
+                case 3:
+                    glBindTexture(GL_TEXTURE_2D, app->deferredFBO.texturesID[4]);
+                    break;
+                case 4:
+                    glBindTexture(GL_TEXTURE_2D, app->deferredFBO.depthBufferTexture);
+                    glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, 0, 0, app->deferredFBO.width, app->deferredFBO.height, 0);
+                    break;
+                default:
+                    break;
+                }
+
                 glBindVertexArray(app->vao);
                 glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
                 glBindVertexArray(0);
                 glUseProgram(0);
+
             }
             break;
 
