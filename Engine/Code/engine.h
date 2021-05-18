@@ -36,6 +36,52 @@ struct Program
     u64                lastWriteTimestamp; // What is this for?
 };
 
+struct VertexBufferAttribute { u32 id; u32 quantity; u32 stride; };
+
+struct VertexBufferLayout {
+    std::vector<VertexBufferAttribute>  attributes;
+    u32 stride;
+};
+
+struct Submesh
+{
+    std::vector<f32>  vertices;
+    std::vector<u32>  indices;
+    u32 vertexOffset;
+    u32 indexOffset;
+    VertexBufferLayout vertexBufferLayout;
+};
+
+struct Mesh
+{
+    std::vector<Submesh>  submeshes;
+    std::vector<f32>  vertices;
+    std::vector<u32>  indices;
+
+    GLuint vertexArrayHandle;
+    GLuint vertexBufferHandle;
+    GLuint indexBufferHandle;
+};
+
+struct Material
+{
+    std::string name;
+    vec3 albedo;
+    vec3 emissive;
+    f32 smoothness;
+    u32 albedoTextureIdx;
+    u32 emissiveTextureIdx;
+    u32 specularTextureIdx;
+    u32 normalsTextureIdx;
+    u32 bumpTextureIdx;
+};
+
+struct Model
+{
+    u32 meshIdx;
+    std::vector<u32> materialIdx;
+};
+
 enum Mode
 {
     Mode_TexturedQuad,
@@ -59,6 +105,9 @@ struct App
 
     std::vector<Texture>  textures;
     std::vector<Program>  programs;
+    std::vector<Mesh>  meshes;
+    std::vector<Material>  materials;
+    std::vector<Model>  models;
 
     // program indices
     u32 texturedGeometryProgramIdx;
