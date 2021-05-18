@@ -15,6 +15,7 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 
+
 void ProcessAssimpMesh(const aiScene* scene, aiMesh* mesh, Mesh* myMesh, u32 baseMeshMaterialIndex, std::vector<u32>& submeshMaterialIndices)
 {
     std::vector<float> vertices;
@@ -448,6 +449,28 @@ void Init(App* app)
     // - programs (and retrieve uniform indices)
     // - textures
 
+    float quadVertices[] = {
+        // positions        // texture Coords
+        -1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
+        -1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
+         1.0f,  1.0f, 0.0f, 1.0f, 1.0f,
+         1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
+    };
+    // setup plane
+    glGenVertexArrays(1, &app->vao);
+    glGenBuffers(1, &app->vbo);
+    glBindVertexArray(app->vao);
+    glBindBuffer(GL_ARRAY_BUFFER, app->vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+
+
+    app->programGeoPass = LoadProgram(app, "shaders.glsl", "GEOMETRY_PASS");
+    app->programLightPass = LoadProgram(app, "shaders.glsl", "LIGHT_PASS");
+
     app->mode = Mode_TexturedQuad;
 }
 
@@ -478,6 +501,49 @@ void Render(App* app)
                 //   (...and make its texture sample from unit 0)
                 // - bind the vao
                 // - glDrawElements() !!!
+
+                //Geometry Pass
+                glUseProgram(app->programGeoPass);
+
+
+                //LightPass
+                glUseProgram(app->programLightPass);
+
+                glMemoryBarrier(GL_FRAMEBUFFER_BARRIER_BIT);
+
+                //UploadLights
+                u32 lCount = 0;
+
+                std::string unif_name;
+                //Upload lights counts
+                for (u32 i = 0; i < app->lightSceneObjects.size(); i++) {
+                    unif_name = "lights[" + std::to_string(lCount) + "].";
+
+                    glUniform4f(glGetUniformLocation(app->programLightPass, (unif_name + "directionIntensity").c_str()), app->lightSceneObjects[i].direction.x, app->lightSceneObjects[i].direction.y, app->lightSceneObjects[i].direction.z, app->lightSceneObjects[i].light.intensity);
+                    glUniform4f(glGetUniformLocation(app->programLightPass, (unif_name + "diffuseSpecular").c_str()), app->lightSceneObjects[i].light.diffuse.x, app->lightSceneObjects[i].light.diffuse.y, app->lightSceneObjects[i].light.diffuse.z, app->lightSceneObjects[i].light.specular);
+                    
+                    if (app->lightSceneObjects[i].light.type != L_DIRECTIONAL)
+                    {
+                        glUniform4f(glGetUniformLocation(app->programLightPass, (unif_name + "positionType").c_str()), app->lightSceneObjects[i].position.x, app->lightSceneObjects[i].position.y, app->lightSceneObjects[i].position.z, float(app->lightSceneObjects[i].light.type));
+                        glUniform4f(glGetUniformLocation(app->programLightPass, (unif_name + "clq").c_str()), app->lightSceneObjects[i].light.constant, app->lightSceneObjects[i].light.linear, app->lightSceneObjects[i].light.quadratic, 0.0f);
+
+
+                        if (app->lightSceneObjects[i].light.type == L_SPOTLIGHT)
+                            glUniform4f(glGetUniformLocation(app->programLightPass, (unif_name + "co").c_str()), app->lightSceneObjects[i].light.cutOff[1], app->lightSceneObjects[i].light.outerCutOff[1], 0.0f, 0.0f);
+                    }
+                    else
+                        glUniform4f(glGetUniformLocation(app->programLightPass, (unif_name + "positionType").c_str()), 0.0f, 0.0f, 0.0f, float(app->lightSceneObjects[i].light.type));
+
+
+                    lCount++;
+                    if (lCount == 203) break;
+                }
+
+                // Render Quad
+                glBindVertexArray(app->vao);
+                glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+                glBindVertexArray(0);
+                glUseProgram(0);
             }
             break;
 

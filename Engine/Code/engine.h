@@ -88,6 +88,43 @@ enum Mode
     Mode_Count
 };
 
+enum LightType : int
+{
+    L_DIRECTIONAL = 0,
+    L_POINT,
+    L_SPOTLIGHT
+};
+
+struct Light
+{
+    LightType type = L_POINT;
+
+    // Attenuattion
+    float intensity = 1.0f;
+    float constant = 1.0f;
+    float linear = 0.091f;
+    float quadratic = 0.011f;
+
+    // color
+    vec3 diffuse; // 0.8
+    float specular = 0.2f;
+
+    // Spotlight
+    float cutOff[2]; // cos(radians(12.5f))
+    float outerCutOff[2]; // cos(radians(17.5f))
+};
+
+struct ModelSceneObject {
+    glm::mat4x4 transform;
+    u32 modelIdx;
+};
+
+struct LightSceneObject {
+    vec3 position;
+    vec3 direction;
+    Light light;
+};
+
 struct App
 {
     // Loop
@@ -109,6 +146,9 @@ struct App
     std::vector<Material>  materials;
     std::vector<Model>  models;
 
+    std::vector<ModelSceneObject>  modelSceneObjects;
+    std::vector<LightSceneObject>  lightSceneObjects;
+
     // program indices
     u32 texturedGeometryProgramIdx;
     
@@ -128,10 +168,11 @@ struct App
     GLuint embeddedElements;
 
     // Location of the texture uniform in the textured quad shader
-    GLuint programUniformTexture;
+    GLuint programGeoPass;
+    GLuint programLightPass;
 
     // VAO object to link our screen filling quad with our textured quad shader
-    GLuint vao;
+    GLuint vao, vbo, ebo;
 };
 
 void Init(App* app);
